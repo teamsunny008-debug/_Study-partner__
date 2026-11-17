@@ -1,0 +1,1343 @@
+<!DOCTYPE html>
+<!--
+  Study Partner (installable web app / PWA)
+  Files that must stay together in the same folder:
+    index.html, manifest.webmanifest, sw.js, icon.svg,
+    icon-192.png, icon-512.png, icon-maskable-512.png
+  Data is saved on the device (localStorage). Works offline after the first visit.
+  The Ask AI tab needs the page to be opened inside claude.ai.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Study Partner</title>
+<meta name="theme-color" content="#2f6b4f">
+<meta name="description" content="Plan, revise and focus: a study planner with flashcards, a focus timer and an exam countdown.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Study Partner">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<style>
+  :root {
+    --bg: #f6f5ef;
+    --card: #fffefa;
+    --ink: #1f3a2e;
+    --mute: #64756b;
+    --line: #dcdfd3;
+    --acc: #2f6b4f;
+    --accink: #ffffff;
+    --soft: #e6efd9;
+    --warn: #a34a1f;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top,0px);
+    padding-bottom: env(safe-area-inset-bottom,0px);
+  }
+
+  @media(prefers-color-scheme:dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121c17;
+      --card: #1b2a22;
+      --ink: #e8efe6;
+      --mute: #9bb0a3;
+      --line: #2c4034;
+      --acc: #8fd1a8;
+      --accink: #0f1c15;
+      --soft: #24372c;
+      --warn: #f0a27a;
+      color-scheme: dark;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #121c17;
+    --card: #1b2a22;
+    --ink: #e8efe6;
+    --mute: #9bb0a3;
+    --line: #2c4034;
+    --acc: #8fd1a8;
+    --accink: #0f1c15;
+    --soft: #24372c;
+    --warn: #f0a27a;
+    color-scheme: dark;
+  }
+
+  html {
+    scroll-padding-top: env(safe-area-inset-top,0px);
+  }
+
+  *,*::before,*::after {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    line-height: 1.5;
+  }
+
+  .wrap {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 28px 20px 60px;
+  }
+
+  h1 {
+    font-size: clamp(28px,6vw,40px);
+    letter-spacing: -1px;
+    margin: 0 0 4px;
+  }
+
+  .sub {
+    color: var(--mute);
+    margin: 0 0 22px;
+  }
+
+  nav {
+    display: flex;
+    gap: 6px;
+    background: var(--soft);
+    padding: 5px;
+    border-radius: 12px;
+    margin-bottom: 22px;
+  }
+
+  nav button {
+    flex: 1;
+    border: 0;
+    background: transparent;
+    color: var(--mute);
+    padding: 15px 8px;
+    border-radius: 8px;
+    font: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  nav button[aria-pressed="true"] {
+    background: var(--card);
+    color: var(--ink);
+    box-shadow: 0 1px 3px #0002;
+  }
+
+  button:focus-visible,input:focus-visible,select:focus-visible {
+    outline: 3px solid var(--acc);
+    outline-offset: 2px;
+  }
+
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 20px;
+  }
+
+  form {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  .row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .row>* {
+    flex: 1 1 140px;
+    min-width: 0;
+  }
+
+  input,select {
+    width: 100%;
+    padding: 15px 14px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--bg);
+    color: var(--ink);
+    font: inherit;
+  }
+
+  .btn {
+    border: 0;
+    background: var(--acc);
+    color: var(--accink);
+    padding: 15px 22px;
+    border-radius: 9px;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .btn.ghost {
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--line);
+  }
+
+  .bar {
+    height: 8px;
+    background: var(--soft);
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 8px 0 18px;
+  }
+
+  .bar span {
+    display: block;
+    height: 100%;
+    background: var(--acc);
+    transition: width .3s;
+  }
+
+  .stat {
+    color: var(--mute);
+    font-size: 14px;
+  }
+
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  li.task {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 0;
+    border-top: 1px solid var(--line);
+  }
+
+  li.task input {
+    width: 28px;
+    height: 28px;
+    flex: none;
+    accent-color: var(--acc);
+  }
+
+  .t {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .t small {
+    display: block;
+    color: var(--mute);
+  }
+
+  .t small.late {
+    color: var(--warn);
+  }
+
+  li.done .t b {
+    text-decoration: line-through;
+    color: var(--mute);
+  }
+
+  .x {
+    border: 0;
+    background: none;
+    color: var(--mute);
+    font-size: 28px;
+    cursor: pointer;
+    padding: 8px 14px;
+    min-width: 48px;
+    min-height: 48px;
+    border-radius: 8px;
+  }
+
+  .empty {
+    color: var(--mute);
+    text-align: center;
+    padding: 26px 0;
+  }
+
+  .flash {
+    min-height: 180px;
+    display: grid;
+    place-items: center;
+    text-align: center;
+    padding: 24px;
+    border: 2px dashed var(--line);
+    border-radius: 14px;
+    font-size: 22px;
+    cursor: pointer;
+    width: 100%;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: inherit;
+    overflow-wrap: anywhere;
+  }
+
+  .flash.back {
+    border-style: solid;
+    border-color: var(--acc);
+    background: var(--soft);
+  }
+
+  .flash small {
+    display: block;
+    color: var(--mute);
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+
+  .actions {
+    display: flex;
+    gap: 10px;
+    margin: 14px 0;
+  }
+
+  .actions .btn {
+    flex: 1;
+  }
+
+  .clock {
+    font-size: clamp(64px,18vw,104px);
+    font-weight: 700;
+    letter-spacing: -3px;
+    text-align: center;
+    margin: 10px 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mode {
+    text-align: center;
+    color: var(--mute);
+    font-weight: 600;
+  }
+
+  .center {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  h2 {
+    font-size: 18px;
+    margin: 0 0 12px;
+  }
+
+  hr {
+    border: 0;
+    border-top: 1px solid var(--line);
+    margin: 20px 0;
+  }
+
+  summary {
+    cursor: pointer;
+    color: var(--mute);
+    padding: 10px 0;
+  }
+
+  .tag {
+    display: inline-block;
+    background: var(--soft);
+    color: var(--ink);
+    border-radius: 20px;
+    padding: 2px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    margin: 2px 0;
+  }
+
+  .detect {
+    color: var(--acc);
+    font-weight: 600;
+    font-size: 14px;
+    min-height: 22px;
+  }
+
+  textarea {
+    width: 100%;
+    min-height: 110px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--bg);
+    color: var(--ink);
+    font: inherit;
+    resize: vertical;
+  }
+
+  .ai-out {
+    white-space: pre-wrap;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 14px;
+    overflow-wrap: anywhere;
+  }
+
+  #flowBox {
+    overflow-x: auto;
+    margin-top: 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--bg);
+    padding: 8px;
+  }
+
+  #flowBox svg {
+    max-width: none;
+    height: auto;
+  }
+
+  .hero {
+    background: radial-gradient(circle at 90% 0%,#ffffff2e,transparent 55%),var(--acc);
+    color: var(--accink);
+    border-radius: 20px;
+    padding: 26px 22px;
+    margin-bottom: 22px;
+  }
+
+  .hero .kick {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    opacity: .8;
+  }
+
+  .hero h1 {
+    margin: 6px 0 12px;
+    overflow-wrap: anywhere;
+  }
+
+  .hero label {
+    display: block;
+    margin: 4px 0 8px;
+    font-weight: 600;
+  }
+
+  .hero .btn {
+    background: var(--accink);
+    color: var(--acc);
+  }
+
+  .hp-title {
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .hp-list {
+    margin: 0 0 8px;
+    padding-left: 20px;
+    list-style: disc;
+  }
+
+  .hp-list li {
+    padding: 2px 0;
+    overflow-wrap: anywhere;
+  }
+
+  .hp-meta {
+    opacity: .85;
+    font-size: 14px;
+  }
+
+  .hp-exam:not(:empty) {
+    margin-top: 18px;
+    padding: 22px 20px;
+    background: #ffe08a;
+    color: #3b2a00;
+    border-radius: 18px;
+    box-shadow: 0 6px 20px #0004;
+    text-align: center;
+  }
+
+  .hp-exam.urgent:not(:empty) {
+    background: #ffb59e;
+    color: #4a1500;
+  }
+
+  .hp-exam .hp-meta {
+    opacity: 1;
+    font-weight: 700;
+    font-size: 18px;
+  }
+
+  .hp-exam .hp-edit {
+    color: inherit;
+  }
+
+  .ex-big {
+    line-height: 1;
+    margin: 10px 0 6px;
+  }
+
+  .ex-big .num {
+    font-size: clamp(56px,16vw,96px);
+    font-weight: 800;
+    letter-spacing: -3px;
+  }
+
+  .ex-big .unit {
+    font-size: clamp(18px,4.5vw,26px);
+    font-weight: 700;
+  }
+
+  .hp-edit {
+    background: none;
+    border: 0;
+    color: inherit;
+    opacity: .8;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 10px 0 0;
+    font: inherit;
+    font-size: 13px;
+  }
+
+  @media(min-width:760px) {
+    .wrap {
+      max-width: 1020px;
+      display: grid;
+      grid-template-columns: minmax(0,1fr) 210px;
+      gap: 0 22px;
+      align-items: start;
+    }
+    .wrap>.hero {
+      grid-column: 1/-1;
+    }
+    .wrap>.panel {
+      grid-column: 1;
+      grid-row: 2;
+    }
+    .wrap>nav {
+      grid-column: 2;
+      grid-row: 2;
+      flex-direction: column;
+      position: sticky;
+      top: 20px;
+      margin: 0;
+    }
+    .wrap>nav button {
+      text-align: left;
+      padding: 15px 16px;
+    }
+  }
+
+  .ic {
+    margin-right: 8px;
+  }
+
+  @media(max-width:759px) {
+    .wrap {
+      padding-bottom: 110px;
+    }
+    nav {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      margin: 0;
+      border-radius: 0;
+      border-top: 1px solid var(--line);
+      background: var(--card);
+      padding: 6px 8px calc(6px + env(safe-area-inset-bottom,0px));
+      z-index: 20;
+    }
+    nav button {
+      font-size: 12px;
+      padding: 8px 2px;
+    }
+    nav button[aria-pressed="true"] {
+      background: var(--soft);
+      box-shadow: none;
+      color: var(--acc);
+    }
+    .ic {
+      display: block;
+      font-size: 20px;
+      margin: 0 0 2px;
+    }
+  }
+
+  .fl {
+    fill: none;
+    stroke: var(--ink);
+    stroke-width: 1.6;
+  }
+
+  .fa {
+    fill: var(--ink);
+  }
+
+  .fn {
+    fill: var(--card);
+    stroke: var(--ink);
+    stroke-width: 2;
+  }
+
+  .ft {
+    fill: var(--ink);
+    font-size: 13px;
+    font-family: system-ui,sans-serif;
+  }
+
+  .fe {
+    fill: var(--ink);
+    font-size: 12px;
+    font-weight: 700;
+    font-style: italic;
+  }
+
+  [hidden] {
+    display: none!important;
+  }
+
+  @media(prefers-reduced-motion:reduce) {
+    * {
+      transition: none!important;
+    }
+  }
+
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero">
+    <div class="kick">Study Partner</div>
+    <h1 id="hello">Hi there 👋</h1>
+    <div id="heroPlans"></div>
+    <div class="hp-exam" id="heroExam"></div>
+    <form id="examForm" hidden>
+      <label for="exName">Exam or subject</label>
+      <div class="row"><input id="exName" maxlength="40" placeholder="e.g. Maths final" required><input id="exDate" type="date" required aria-label="Exam date"><button class="btn" type="submit">Save</button></div>
+      <button class="hp-edit" type="button" id="examCancel">Cancel</button>
+    </form>
+    <button class="hp-edit" type="button" id="addExam">Add exam date</button>
+    <form id="nameForm" hidden>
+      <label for="nameIn">What should I call you?</label>
+      <div class="row"><input id="nameIn" maxlength="30" placeholder="Your name" required><button class="btn" type="submit">Save</button></div>
+    </form>
+    <button class="hp-edit" type="button" id="changeName" hidden>Change name</button>
+  </header>
+  <nav aria-label="Shortcuts">
+    <button type="button" data-tab="plan" aria-pressed="true"><span class="ic" aria-hidden="true">📝</span>Plan</button>
+    <button type="button" data-tab="todo" aria-pressed="false"><span class="ic" aria-hidden="true">✅</span>To-do</button>
+    <button type="button" data-tab="revise" aria-pressed="false"><span class="ic" aria-hidden="true">🧠</span>Revise</button>
+    <button type="button" data-tab="focus" aria-pressed="false"><span class="ic" aria-hidden="true">⏱</span>Focus</button>
+    <button type="button" data-tab="ai" aria-pressed="false"><span class="ic" aria-hidden="true">🤖</span>Ask AI</button>
+  </nav>
+
+  <section class="panel" id="plan">
+    <form id="taskForm">
+      <div class="row">
+        <input id="tTitle" placeholder="What do you need to do?" maxlength="120" required aria-label="Task">
+        <button class="btn" type="submit" style="flex:0 0 auto">Add</button>
+      </div>
+      <div class="detect" id="tDetect" aria-live="polite"></div>
+      <details>
+        <summary>Add a subject or due date (optional)</summary>
+        <div class="row" style="margin-top:8px">
+          <input id="tSubject" placeholder="Subject" maxlength="40" aria-label="Subject">
+          <input id="tDue" type="date" aria-label="Due date">
+        </div>
+      </details>
+    </form>
+    <div class="stat" id="planStat"></div>
+    <div class="bar"><span id="planBar" style="width:0%"></span></div>
+    <ul id="taskList"></ul>
+  </section>
+
+  <section class="panel" id="revise" hidden>
+    <div class="stat" id="cardStat"></div>
+    <div class="bar"><span id="cardBar" style="width:0%"></span></div>
+    <div id="cardArea"></div>
+    <hr>
+    <h2>Add a flashcard</h2>
+    <form id="cardForm">
+      <input id="cQ" placeholder="Question or term" maxlength="200" required aria-label="Question">
+      <input id="cA" placeholder="Answer" maxlength="300" required aria-label="Answer">
+      <div class="detect" id="cDetect" aria-live="polite"></div>
+      <button class="btn" type="submit">Save card</button>
+    </form>
+    <button class="btn ghost" type="button" id="manage">Manage cards</button>
+    <ul id="cardList" hidden></ul>
+  </section>
+
+  <section class="panel" id="focus" hidden>
+    <div class="mode" id="modeLabel">Focus time</div>
+    <div class="clock" id="clock" role="timer" aria-live="off">25:00</div>
+    <div class="center">
+      <button class="btn" type="button" id="startBtn">Start</button>
+      <button class="btn ghost" type="button" id="resetBtn">Reset</button>
+      <button class="btn ghost" type="button" id="modeBtn">Switch to break</button>
+    </div>
+    <p class="stat" style="text-align:center;margin-top:18px" id="focusStat"></p>
+  </section>
+
+  <section class="panel" id="todo" hidden>
+    <h2>To-do list</h2>
+    <form id="todoForm"><div class="row"><input id="todoIn" placeholder="Add a quick to-do" maxlength="120" required aria-label="New to-do"><button class="btn" type="submit" style="flex:0 0 auto">Add</button></div></form>
+    <div class="stat" id="todoStat"></div>
+    <ul id="todoList"></ul>
+    <button class="btn ghost" type="button" id="todoClear" style="margin-top:14px" hidden>Clear completed</button>
+  </section>
+
+  <section class="panel" id="ai" hidden>
+    <h2>Ask your AI tutor</h2>
+    <p class="stat">Type any problem or topic. Get it solved and explained step by step, or turned into a flowchart.</p>
+    <textarea id="aiQ" placeholder="e.g. Solve x² − 5x + 6 = 0, or explain how photosynthesis works" aria-label="Your question"></textarea>
+    <div class="actions"><button class="btn" type="button" id="aiSolve">Solve &amp; explain</button><button class="btn ghost" type="button" id="aiFlow">Make flowchart</button></div>
+    <div class="detect" id="aiMsg" aria-live="polite"></div>
+    <div class="ai-out" id="aiOut" hidden></div>
+    <div class="actions" id="aiMore" hidden><button class="btn" type="button" id="aiCards">Make flashcards from this</button><button class="btn ghost" type="button" id="aiGo" hidden>Study them now</button></div>
+    <div id="flowBox" hidden></div>
+  </section>
+</div>
+<script>
+  'use strict';
+  const $ = s => document.querySelector(s);
+  const KEY = 'study-partner-v1';
+  const today = () => {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  };
+  const uid = () => Math.random().toString(36).slice(2, 10);
+  function el(t, c, x) {
+    const n = document.createElement(t);
+    if (c) {
+      n.className = c;
+    }
+    if (x !== undefined) {
+      n.textContent = x;
+    }
+    return n;
+  }
+  const TOPICS = [['Maths', /math|algebra|equation|quadratic|calcul|geometr|trigon|fraction|statistic|integral|deriv|probab|formula/i], ['Science', /scien|biolog|chemi|physic|\bcells?\b|atom|energy|photosyn|molecul|organism|\bgenes?\b|genetic|ecosystem|electric/i], ['English & Languages', /english|essay|poem|poetry|grammar|novel|literat|vocab|\bverbs?\b|\bnouns?\b|language|spanish|french|german|hindi|telugu|writing/i], ['History', /histor|\bwar\b|empire|revolution|timeline|ancient|\bkings?\b|\bqueen\b|century|treaty|coloni/i], ['Geography', /geograph|climate|\briver|continent|population|volcano|earthquake|\bmap\b|\bcountry|\bcapital\b/i], ['Computing', /\bcode\b|coding|program|python|javascript|algorithm|computer|html|software|database/i]];
+  function topicOf(t) {
+    const m = TOPICS.find(x => x[1].test(t || ''));
+    return m ? m[0] : 'General';
+  }
+  let S = null;
+  try {
+    S = JSON.parse(localStorage.getItem(KEY));
+  }
+  catch (e) {
+    S = null;
+  }
+  if (!S || !Array.isArray(S.tasks) || !Array.isArray(S.cards)) {
+    S = { tasks: [{ id: uid(), title: 'Outline the project', subject: 'Project', due: today(), done: false }],
+      cards: [{ id: uid(), q: 'What is active recall?', a: 'Testing yourself from memory instead of rereading.', known: false }], focus: {} };
+  }
+  if (!S.focus || typeof S.focus !== 'object') {
+    S.focus = {};
+  }
+  if (typeof S.name !== 'string') {
+    S.name = '';
+  }
+  if (!Array.isArray(S.todos)) {
+    S.todos = [];
+  }
+  if (!Array.isArray(S.exams)) {
+    S.exams = [];
+  }
+  function save() {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(S));
+    }
+    catch (e) {
+    }
+  }
+
+  /* tabs */
+  document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('[data-tab]').forEach(x => {
+      x.setAttribute('aria-pressed', String(x === b));
+      $('#' + x.dataset.tab).hidden = x !== b;
+    });
+  }));
+
+  /* plan */
+  function renderPlan() {
+    renderHero();
+    const done = S.tasks.filter(t => t.done).length, n = S.tasks.length;
+    $('#planStat').textContent = n ? done + ' of ' + n + ' tasks done' : 'No tasks yet';
+    $('#planBar').style.width = (n ? Math.round(done / n * 100) : 0) + '%';
+    const list = $('#taskList');
+    list.replaceChildren();
+    if (!n) {
+      list.append(el('li', 'empty', 'Add your first task above.'));
+      return;
+    }
+    [...S.tasks].sort((a, b) => (a.done - b.done) || (a.due || '9').localeCompare(b.due || '9')).forEach(t => {
+      const li = el('li', 'task' + (t.done ? ' done' : ''));
+      const cb = el('input');
+      cb.type = 'checkbox';
+      cb.checked = t.done;
+      cb.setAttribute('aria-label', 'Mark done: ' + t.title);
+      cb.addEventListener('change', () => {
+        t.done = cb.checked;
+        save();
+        renderPlan();
+      });
+      const box = el('div', 't');
+      box.append(el('b', '', t.title));
+      const tg = el('small');
+      tg.append(el('span', 'tag', topicOf(t.subject + ' ' + t.title)));
+      box.append(tg);
+      const meta = [t.subject, t.due ? 'due ' + t.due : ''].filter(Boolean).join(' · ');
+      if (meta) {
+        const s = el('small', (!t.done && t.due && t.due < today()) ? 'late' : '', meta + ((!t.done && t.due && t.due < today()) ? ' (overdue)' : ''));
+        box.append(s);
+      }
+      const x = el('button', 'x', '×');
+      x.type = 'button';
+      x.setAttribute('aria-label', 'Delete ' + t.title);
+      x.addEventListener('click', () => {
+        S.tasks = S.tasks.filter(i => i.id !== t.id);
+        save();
+        renderPlan();
+      });
+      li.append(cb, box, x);
+      list.append(li);
+    });
+  }
+  $('#taskForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const title = $('#tTitle').value.trim();
+    if (!title) {
+      return;
+    }
+    S.tasks.push({ id: uid(), title, subject: $('#tSubject').value.trim(), due: $('#tDue').value, done: false });
+    e.target.reset();
+    save();
+    renderPlan();
+  });
+
+  /* revise */
+  let idx = 0, flipped = false;
+  function renderCards() {
+    const n = S.cards.length, known = S.cards.filter(c => c.known).length;
+    $('#cardStat').textContent = n ? known + ' of ' + n + ' cards mastered' : 'No cards yet';
+    $('#cardBar').style.width = (n ? Math.round(known / n * 100) : 0) + '%';
+    const area = $('#cardArea');
+    area.replaceChildren();
+    if (!n) {
+      area.append(el('div', 'empty', 'Add a flashcard below to start revising.'));
+    }
+    else {
+      if (idx >= n) {
+        idx = 0;
+      }
+      const c = S.cards[idx];
+      const f = el('button', 'flash' + (flipped ? ' back' : ''));
+      f.type = 'button';
+      f.append(el('small', '', (flipped ? 'Answer' : 'Question ' + (idx + 1) + ' of ' + n) + ' · ' + topicOf(c.q + ' ' + c.a)), document.createTextNode(flipped ? c.a : c.q));
+      f.addEventListener('click', () => {
+        flipped = !flipped;
+        renderCards();
+      });
+      f.setAttribute('aria-label', (flipped ? 'Answer: ' : 'Question: ') + (flipped ? c.a : c.q) + '. Press to flip.');
+      const act = el('div', 'actions');
+      const again = el('button', 'btn ghost', 'Again');
+      again.type = 'button';
+      const got = el('button', 'btn', 'Got it');
+      got.type = 'button';
+      const next = () => {
+        idx = (idx + 1) % n;
+        flipped = false;
+        save();
+        renderCards();
+      };
+      again.addEventListener('click', () => {
+        c.known = false;
+        next();
+      });
+      got.addEventListener('click', () => {
+        c.known = true;
+        next();
+      });
+      act.append(again, got);
+      area.append(f, act);
+    }
+    const cl = $('#cardList');
+    cl.replaceChildren();
+    S.cards.forEach(c => {
+      const li = el('li', 'task');
+      const box = el('div', 't');
+      box.append(el('b', '', c.q), el('small', '', topicOf(c.q + ' ' + c.a) + ' · ' + c.a));
+      const x = el('button', 'x', '×');
+      x.type = 'button';
+      x.setAttribute('aria-label', 'Delete card ' + c.q);
+      x.addEventListener('click', () => {
+        S.cards = S.cards.filter(i => i.id !== c.id);
+        flipped = false;
+        save();
+        renderCards();
+      });
+      li.append(box, x);
+      cl.append(li);
+    });
+  }
+  $('#cardForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const q = $('#cQ').value.trim(), a = $('#cA').value.trim();
+    if (!q || !a) {
+      return;
+    }
+    S.cards.push({ id: uid(), q, a, known: false });
+    e.target.reset();
+    save();
+    renderCards();
+  });
+  $('#manage').addEventListener('click', () => {
+    const l = $('#cardList');
+    l.hidden = !l.hidden;
+  });
+
+  /* focus timer */
+  const LEN = { focus: 25 * 60, break: 5 * 60 };
+  let mode = 'focus', left = LEN.focus, endAt = 0, timer = null;
+  function fmt(s) {
+    return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+  }
+  function renderTimer() {
+    $('#clock').textContent = fmt(left);
+    $('#modeLabel').textContent = mode === 'focus' ? 'Focus time' : 'Break time';
+    $('#modeBtn').textContent = mode === 'focus' ? 'Switch to break' : 'Switch to focus';
+    $('#startBtn').textContent = timer ? 'Pause' : 'Start';
+    $('#focusStat').textContent = 'Focus sessions completed today: ' + (S.focus[today()] || 0);
+    document.title = timer ? fmt(left) + ' · Study Partner' : 'Study Partner';
+  }
+  function stop() {
+    clearInterval(timer);
+    timer = null;
+  }
+  function tick() {
+    left = Math.max(0, Math.round((endAt - Date.now()) / 1000));
+    if (left === 0) {
+      stop();
+      if (mode === 'focus') {
+        S.focus[today()] = (S.focus[today()] || 0) + 1;
+        save();
+        renderHero();
+      }
+      mode = mode === 'focus' ? 'break' : 'focus';
+      left = LEN[mode];
+    }
+    renderTimer();
+  }
+  $('#startBtn').addEventListener('click', () => {
+    if (timer) {
+      stop();
+    }
+    else {
+      endAt = Date.now() + left * 1000;
+      timer = setInterval(tick, 250);
+    }
+    renderTimer();
+  });
+  $('#resetBtn').addEventListener('click', () => {
+    stop();
+    left = LEN[mode];
+    renderTimer();
+  });
+  $('#modeBtn').addEventListener('click', () => {
+    stop();
+    mode = mode === 'focus' ? 'break' : 'focus';
+    left = LEN[mode];
+    renderTimer();
+  });
+
+  /* todo */
+  function renderTodo() {
+    const d = S.todos.filter(x => x.done).length, ul = $('#todoList');
+    $('#todoStat').textContent = S.todos.length ? d + ' of ' + S.todos.length + ' done' : 'Nothing here yet';
+    $('#todoClear').hidden = !d;
+    ul.replaceChildren();
+    if (!S.todos.length) {
+      ul.append(el('li', 'empty', 'Add your first to-do above.'));
+      return;
+    }
+    S.todos.forEach(t => {
+      const li = el('li', 'task' + (t.done ? ' done' : ''));
+      const cb = el('input');
+      cb.type = 'checkbox';
+      cb.checked = t.done;
+      cb.setAttribute('aria-label', 'Mark done: ' + t.text);
+      cb.addEventListener('change', () => {
+        t.done = cb.checked;
+        save();
+        renderTodo();
+      });
+      const box = el('div', 't');
+      box.append(el('b', '', t.text));
+      const x = el('button', 'x', '×');
+      x.type = 'button';
+      x.setAttribute('aria-label', 'Delete ' + t.text);
+      x.addEventListener('click', () => {
+        S.todos = S.todos.filter(i => i.id !== t.id);
+        save();
+        renderTodo();
+      });
+      li.append(cb, box, x);
+      ul.append(li);
+    });
+  }
+  $('#todoForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const v = $('#todoIn').value.trim();
+    if (!v) {
+      return;
+    }
+    S.todos.push({ id: uid(), text: v, done: false });
+    e.target.reset();
+    save();
+    renderTodo();
+  });
+  $('#todoClear').addEventListener('click', () => {
+    S.todos = S.todos.filter(x => !x.done);
+    save();
+    renderTodo();
+  });
+
+  /* exam */
+  let editExam = false;
+  function daysTo(d) {
+    return Math.round((new Date(d + 'T12:00:00') - new Date(today() + 'T12:00:00')) / 86400000);
+  }
+  function renderExam() {
+    const box = $('#heroExam');
+    box.replaceChildren();
+    const up = S.exams.filter(x => daysTo(x.date) >= 0).sort((a, b) => a.date.localeCompare(b.date)), n = up[0];
+    $('#exDate').min = today();
+    $('#examForm').hidden = !editExam;
+    $('#addExam').hidden = editExam;
+    $('#addExam').textContent = n ? 'Add another exam' : 'Add exam date';
+    if (!n) {
+      return;
+    }
+    const d = daysTo(n.date);
+    const big = el('div', 'ex-big');
+    if (d > 1) {
+      big.append(el('span', 'num', String(d)), el('span', 'unit', ' days left'));
+    }
+    else {
+      big.append(el('span', 'num', d === 0 ? 'Today!' : 'Tomorrow'));
+    }
+    box.classList.toggle('urgent', d <= 3);
+    box.append(el('div', 'hp-meta', '📅 Next exam: ' + n.name), big);
+    if (up[1]) {
+      const e2 = daysTo(up[1].date);
+      box.append(el('div', 'hp-meta', 'Then: ' + up[1].name + ' ' + (e2 === 0 ? 'today' : e2 === 1 ? 'tomorrow' : 'in ' + e2 + ' days')));
+    }
+    const rm = el('button', 'hp-edit', 'Remove this exam');
+    rm.type = 'button';
+    rm.addEventListener('click', () => {
+      S.exams = S.exams.filter(x => x.id !== n.id);
+      save();
+      renderExam();
+    });
+    box.append(rm);
+  }
+  $('#addExam').addEventListener('click', () => {
+    editExam = true;
+    renderExam();
+    $('#exName').focus();
+  });
+  $('#examCancel').addEventListener('click', () => {
+    editExam = false;
+    $('#examForm').reset();
+    renderExam();
+  });
+  $('#examForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const n = $('#exName').value.trim(), d = $('#exDate').value;
+    if (!n || !d) {
+      return;
+    }
+    S.exams.push({ id: uid(), name: n, date: d });
+    e.target.reset();
+    editExam = false;
+    save();
+    renderExam();
+  });
+
+  /* hero */
+  let editName = false;
+  function renderHero() {
+    renderExam();
+    const nf = $('#nameForm'), pl = $('#heroPlans');
+    pl.replaceChildren();
+    $('#changeName').hidden = !S.name || editName;
+    nf.hidden = !(editName || !S.name);
+    if (!S.name) {
+      $('#hello').textContent = 'Hi there 👋';
+      return;
+    }
+    $('#hello').textContent = 'Hi, ' + S.name + ' 👋';
+    const t = today(), open = S.tasks.filter(x => !x.done), due = open.filter(x => x.due === t), late = open.filter(x => x.due && x.due < t);
+    pl.append(el('div', 'hp-title', due.length ? 'Your plans for today' : open.length ? 'Nothing due today. Next up:' : 'You’re all clear. Add a plan to get started.'));
+    const show = (due.length ? due : open).slice(0, 4);
+    if (show.length) {
+      const ul = el('ul', 'hp-list');
+      show.forEach(x => ul.append(el('li', '', x.title + (x.due && x.due !== t ? ' · due ' + x.due : ''))));
+      pl.append(ul);
+    }
+    const bits = [];
+    if (late.length) {
+      bits.push(late.length + ' overdue');
+    }
+    bits.push((S.focus[t] || 0) + ' focus sessions today');
+    pl.append(el('div', 'hp-meta', bits.join(' · ')));
+  }
+  $('#nameForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const v = $('#nameIn').value.trim();
+    if (!v) {
+      return;
+    }
+    S.name = v;
+    editName = false;
+    save();
+    renderHero();
+  });
+  $('#changeName').addEventListener('click', () => {
+    editName = true;
+    renderHero();
+    $('#nameIn').value = S.name;
+    $('#nameIn').focus();
+  });
+
+  /* ask ai */
+  let aiP = null;
+  function getAI() {
+    if (!aiP) {
+      aiP = Promise.resolve(window.claude && claude.use ? claude.use('sample') : null).catch(() => null);
+    }
+    return aiP;
+  }
+  const TUTOR = 'You are a patient, friendly study tutor. Solve the problem step by step and explain every step in simple words a student can follow. Give a short real-life example when it helps and finish with a 2-line summary. Use plain text only: numbered steps, no markdown symbols and no LaTeX.\n\nStudent question: ';
+  const FLOW = 'Return ONLY JSON in this shape: {"nodes":[{"id":"n1","text":"max 7 words","type":"start|process|decision|io|end"}],"edges":[{"from":"n1","to":"n2","label":""}]}. Draw a clear flowchart (max 12 nodes) that explains the following. Make it a classic textbook flowchart: exactly one start and one end, steps in order, use io for input or output, and decisions as yes/no questions. For each decision list the Yes edge first, then the No edge, labelled Yes and No.\n\nTopic: ';
+  function wrap(t, m) {
+    m = m || 20;
+    const l = [''];
+    String(t || '').split(' ').forEach(x => {
+      const c = l[l.length - 1];
+      if ((c + ' ' + x).trim().length > m && l.length < 3 && c) {
+        l.push(x);
+      }
+      else {
+        l[l.length - 1] = (c + ' ' + x).trim();
+      }
+    });
+    return l;
+  }
+  function drawFlow(d) {
+    const nodes = Array.isArray(d.nodes) ? d.nodes.slice(0, 14) : [];
+    if (!nodes.length) {
+      throw new Error('empty');
+    }
+    const ids = new Set(nodes.map(n => n.id));
+    const edges = (Array.isArray(d.edges) ? d.edges : []).filter(e => ids.has(e.from) && ids.has(e.to));
+    const lv = {};
+    lv[nodes[0].id] = 0;
+    const q = [nodes[0].id];
+    for (let i = 0; i < q.length; i++) {
+      edges.forEach(e => {
+        if (e.from === q[i] && !(e.to in lv)) {
+          lv[e.to] = lv[q[i]] + 1;
+          q.push(e.to);
+        }
+      });
+    }
+    let mx = Math.max(...Object.values(lv));
+    nodes.forEach(n => {
+      if (!(n.id in lv)) {
+        lv[n.id] = ++mx;
+      }
+    });
+    const W = 170, H = 60, GX = 26, GY = 60, layers = [];
+    nodes.forEach(n => (layers[lv[n.id]] = layers[lv[n.id]] || []).push(n));
+    const cols = Math.max(...layers.filter(Boolean).map(l => l.length)), VW = cols * (W + GX) + GX + 80, VH = layers.length * (H + GY) + GY;
+    const pos = {};
+    layers.forEach((l, i) => l && l.forEach((n, j) => {
+      pos[n.id] = { x: (VW - 80 - l.length * (W + GX) + GX) / 2 + j * (W + GX), y: GY / 2 + i * (H + GY) };
+    }));
+    const NS = 'http://www.w3.org/2000/svg';
+    const mk = (t, a, x) => {
+      const n = document.createElementNS(NS, t);
+      for (const k in a)
+        n.setAttribute(k, a[k]);
+      if (x !== undefined) {
+        n.textContent = x;
+      }
+      return n;
+    };
+    const svg = mk('svg', { viewBox: '0 0 ' + VW + ' ' + VH, width: VW, role: 'img', 'aria-label': 'Flowchart' });
+    const df = mk('defs', {}), mkr = mk('marker', { id: 'ah', viewBox: '0 0 10 10', refX: '9', refY: '5', markerWidth: '7', markerHeight: '7', orient: 'auto-start-reverse' });
+    mkr.append(mk('path', { d: 'M0 0L10 5L0 10z', class: 'fa' }));
+    df.append(mkr);
+    svg.append(df);
+    const byId = Object.fromEntries(nodes.map(n => [n.id, n])), outs = {};
+    nodes.forEach(n => {
+      outs[n.id] = 0;
+    });
+    edges.forEach(e => {
+      const a = pos[e.from], b = pos[e.to], back = lv[e.to] <= lv[e.from], k = outs[e.from]++;
+      let p, lx, ly;
+      if (back) {
+        const x1 = a.x + W, y1 = a.y + H / 2, x2 = b.x + W, y2 = b.y + H / 2, xr = Math.max(x1, x2) + 34;
+        p = 'M' + x1 + ' ' + y1 + 'L' + xr + ' ' + y1 + 'L' + xr + ' ' + y2 + 'L' + x2 + ' ' + y2;
+        lx = x1 + 4;
+        ly = y1 - 6;
+      }
+      else {
+        const x1 = a.x + W / 2, y1 = a.y + H, x2 = b.x + W / 2, y2 = b.y;
+        if (byId[e.from].type === 'decision' && k > 0 && Math.abs(x2 - x1) > W / 2) {
+          const sx = x2 > x1 ? a.x + W : a.x, sy = a.y + H / 2;
+          p = 'M' + sx + ' ' + sy + 'L' + x2 + ' ' + sy + 'L' + x2 + ' ' + y2;
+          lx = sx + (x2 > x1 ? 6 : -26);
+          ly = sy - 6;
+        }
+        else {
+          const ym = (y1 + y2) / 2;
+          p = x1 === x2 ? 'M' + x1 + ' ' + y1 + 'L' + x2 + ' ' + y2 : 'M' + x1 + ' ' + y1 + 'L' + x1 + ' ' + ym + 'L' + x2 + ' ' + ym + 'L' + x2 + ' ' + y2;
+          lx = x1 + 8;
+          ly = y1 + 16;
+        }
+      }
+      svg.append(mk('path', { d: p, class: 'fl', 'marker-end': 'url(#ah)' }));
+      if (e.label) {
+        svg.append(mk('text', { x: lx, y: ly, class: 'fe' }, String(e.label)));
+      }
+    });
+    nodes.forEach(n => {
+      const p = pos[n.id], t = n.type;
+      let s;
+      if (t === 'decision') {
+        s = mk('polygon', { points: [[p.x + W / 2, p.y], [p.x + W, p.y + H / 2], [p.x + W / 2, p.y + H], [p.x, p.y + H / 2]].join(' '), class: 'fn dec' });
+      }
+      else if (t === 'start' || t === 'end') {
+        s = mk('ellipse', { cx: p.x + W / 2, cy: p.y + H / 2, rx: W / 2, ry: H / 2 - 4, class: 'fn' });
+      }
+      else if (t === 'io') {
+        s = mk('polygon', { points: [[p.x + 18, p.y], [p.x + W, p.y], [p.x + W - 18, p.y + H], [p.x, p.y + H]].join(' '), class: 'fn' });
+      }
+      else {
+        s = mk('rect', { x: p.x, y: p.y, width: W, height: H, class: 'fn' });
+      }
+      svg.append(s);
+      const ls = wrap(n.text, t === 'decision' ? 14 : 20);
+      ls.forEach((l, i) => svg.append(mk('text', { x: p.x + W / 2, y: p.y + H / 2 + (i - (ls.length - 1) / 2) * 15 + 5, 'text-anchor': 'middle', class: 'ft' }, l)));
+    });
+    $('#flowBox').replaceChildren(svg);
+    $('#flowBox').hidden = false;
+  }
+  async function aiRun(kind) {
+    const msg = $('#aiMsg'), q = $('#aiQ').value.trim();
+    if (!q) {
+      msg.textContent = 'Type a question or topic first.';
+      return;
+    }
+    msg.textContent = '';
+    const ai = await getAI();
+    if (!ai) {
+      msg.textContent = 'The AI works when this page is opened inside claude.ai while signed in.';
+      return;
+    }
+    if (kind === 'solve' && /flow\s?-?chart/i.test(q)) {
+      kind = 'flow';
+    }
+    $('#aiSolve').disabled = $('#aiFlow').disabled = true;
+    try {
+      if (kind === 'solve') {
+        const out = $('#aiOut');
+        $('#aiMore').hidden = true;
+        out.hidden = false;
+        out.textContent = 'Thinking…';
+        const r = await ai(TUTOR + q, { cache: false, onText: ({ text }) => {
+            out.textContent = text;
+          } });
+        lastLesson = { q, text: (r && r.text) || out.textContent };
+        $('#aiMore').hidden = false;
+        $('#aiGo').hidden = true;
+      }
+      else {
+        msg.textContent = 'Drawing your flowchart…';
+        drawFlow(await ai.json(FLOW + q, { cache: false }));
+        msg.textContent = '';
+      }
+    }
+    catch (e) {
+      msg.textContent = e && e.code === 'not_granted' ? 'Please allow the AI request to use this feature.' : e && e.code === 'rate_limited' ? 'Too many requests. Wait a moment and try again.' : 'Couldn’t get an answer. Please try again.';
+    }
+    $('#aiSolve').disabled = $('#aiFlow').disabled = false;
+  }
+  let lastLesson = null;
+  const CARDS = 'Return ONLY JSON in this shape: {"cards":[{"q":"question","a":"answer"}]}. Make 4 to 6 short revision flashcards from the lesson below. Each question under 100 characters and each answer under 200 characters, plain text only.\n\n';
+  $('#aiCards').addEventListener('click', async () => {
+    const msg = $('#aiMsg');
+    if (!lastLesson) {
+      return;
+    }
+    const ai = await getAI();
+    if (!ai) {
+      msg.textContent = 'The AI works when this page is opened inside claude.ai while signed in.';
+      return;
+    }
+    const b = $('#aiCards');
+    b.disabled = true;
+    msg.textContent = 'Making flashcards…';
+    try {
+      const d = await ai.json(CARDS + 'Question: ' + lastLesson.q + '\n\nLesson:\n' + lastLesson.text, { cache: false });
+      const list = (Array.isArray(d.cards) ? d.cards : []).filter(c => c && typeof c.q === 'string' && typeof c.a === 'string' && c.q.trim() && c.a.trim()).slice(0, 8);
+      if (!list.length) {
+        throw new Error('empty');
+      }
+      list.forEach(c => S.cards.push({ id: uid(), q: c.q.trim().slice(0, 200), a: c.a.trim().slice(0, 300), known: false }));
+      save();
+      renderCards();
+      msg.textContent = 'Added ' + list.length + ' flashcards to Revise.';
+      $('#aiGo').hidden = false;
+    }
+    catch (e) {
+      msg.textContent = e && e.code === 'not_granted' ? 'Please allow the AI request to use this feature.' : e && e.code === 'rate_limited' ? 'Too many requests. Wait a moment and try again.' : 'Couldn’t make flashcards. Please try again.';
+    }
+    b.disabled = false;
+  });
+  $('#aiGo').addEventListener('click', () => document.querySelector('[data-tab="revise"]').click());
+  $('#aiSolve').addEventListener('click', () => aiRun('solve'));
+  $('#aiFlow').addEventListener('click', () => aiRun('flow'));
+  function liveDetect(ids, out) {
+    const o = $(out);
+    const f = () => {
+      const t = ids.map(i => $(i).value).join(' ').trim();
+      o.textContent = t ? 'Topic type: ' + topicOf(t) : '';
+    };
+    ids.forEach(i => $(i).addEventListener('input', f));
+    o.closest('form').addEventListener('reset', () => {
+      o.textContent = '';
+    });
+  }
+  liveDetect(['#tTitle', '#tSubject'], '#tDetect');
+  liveDetect(['#cQ', '#cA'], '#cDetect');
+  renderPlan();
+  renderCards();
+  renderTimer();
+  renderTodo();
+
+  /* ---------- Offline support (service worker) ---------- */
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>
